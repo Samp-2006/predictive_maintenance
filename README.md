@@ -62,6 +62,8 @@ predictive_maintenance/
 
 ## Quick Start (5 commands)
 
+ # -> Download the 3.10 version of python 
+
 ```bash
 # 1. Clone / enter project
 cd predictive_maintenance
