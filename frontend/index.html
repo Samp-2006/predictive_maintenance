@@ -1,0 +1,840 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>PredictiveSense — Machine Health Monitor</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Barlow:wght@300;400;600;700&family=Barlow+Condensed:wght@700;900&display=swap" rel="stylesheet" />
+  <style>
+    /* ── Design System ──────────────────────────────────────────── */
+    :root {
+      --bg:          #080c10;
+      --surface:     #0d1318;
+      --panel:       #111820;
+      --border:      #1e2d3d;
+      --accent:      #00e5ff;
+      --accent-dim:  #007a99;
+      --normal:      #00ff88;
+      --normal-dim:  #00804a;
+      --faulty:      #ff3e3e;
+      --faulty-dim:  #801f1f;
+      --warn:        #ffb700;
+      --text:        #c8d8e8;
+      --text-muted:  #4a6070;
+      --font-mono:   'Share Tech Mono', monospace;
+      --font-ui:     'Barlow', sans-serif;
+      --font-display:'Barlow Condensed', sans-serif;
+      --glow-accent: 0 0 20px rgba(0,229,255,0.3);
+      --glow-normal: 0 0 20px rgba(0,255,136,0.4);
+      --glow-faulty: 0 0 20px rgba(255,62,62,0.4);
+      --radius:      4px;
+      --transition:  0.2s ease;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font-ui);
+      font-size: 14px;
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
+
+    /* ── Scanline overlay ───────────────────────────────────────── */
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background: repeating-linear-gradient(
+        0deg,
+        transparent,
+        transparent 2px,
+        rgba(0,0,0,0.07) 2px,
+        rgba(0,0,0,0.07) 4px
+      );
+      pointer-events: none;
+      z-index: 1000;
+    }
+
+    /* ── Grid noise texture ─────────────────────────────────────── */
+    body::after {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background-image:
+        radial-gradient(ellipse 80% 50% at 50% -10%, rgba(0,229,255,0.06) 0%, transparent 60%),
+        radial-gradient(ellipse 40% 40% at 90% 80%, rgba(0,255,136,0.03) 0%, transparent 50%);
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    /* ── Layout ─────────────────────────────────────────────────── */
+    .shell {
+      position: relative;
+      z-index: 1;
+      display: grid;
+      grid-template-rows: auto 1fr auto;
+      min-height: 100vh;
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 0 24px;
+    }
+
+    /* ── Header ─────────────────────────────────────────────────── */
+    header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 20px 0 18px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .logo {
+      display: flex;
+      align-items: baseline;
+      gap: 10px;
+    }
+
+    .logo-mark {
+      font-family: var(--font-display);
+      font-size: 22px;
+      font-weight: 900;
+      letter-spacing: 3px;
+      text-transform: uppercase;
+      color: var(--accent);
+      text-shadow: var(--glow-accent);
+    }
+
+    .logo-sub {
+      font-family: var(--font-mono);
+      font-size: 10px;
+      color: var(--text-muted);
+      letter-spacing: 2px;
+      text-transform: uppercase;
+    }
+
+    .status-bar {
+      display: flex;
+      align-items: center;
+      gap: 18px;
+      font-family: var(--font-mono);
+      font-size: 11px;
+      color: var(--text-muted);
+    }
+
+    .status-indicator {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--normal);
+      box-shadow: 0 0 8px var(--normal);
+      animation: pulse-dot 2s ease-in-out infinite;
+    }
+
+    .dot.offline { background: var(--faulty); box-shadow: 0 0 8px var(--faulty); animation: none; }
+
+    @keyframes pulse-dot {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.4; }
+    }
+
+    /* ── Main ───────────────────────────────────────────────────── */
+    main {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      grid-template-rows: auto auto;
+      gap: 16px;
+      padding: 24px 0;
+      align-content: start;
+    }
+
+    @media (max-width: 700px) {
+      main { grid-template-columns: 1fr; }
+    }
+
+    /* ── Panel component ────────────────────────────────────────── */
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 20px;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .panel::before {
+      content: '';
+      position: absolute;
+      top: 0; left: 0; right: 0;
+      height: 2px;
+      background: linear-gradient(90deg, transparent, var(--accent-dim), transparent);
+    }
+
+    .panel-title {
+      font-family: var(--font-mono);
+      font-size: 10px;
+      letter-spacing: 2.5px;
+      text-transform: uppercase;
+      color: var(--accent-dim);
+      margin-bottom: 16px;
+    }
+
+    /* ── Upload zone ────────────────────────────────────────────── */
+    .upload-panel { grid-column: 1 / -1; }
+
+    .drop-zone {
+      border: 2px dashed var(--border);
+      border-radius: var(--radius);
+      padding: 40px 24px;
+      text-align: center;
+      cursor: pointer;
+      transition: var(--transition);
+      background: var(--surface);
+      position: relative;
+    }
+
+    .drop-zone:hover,
+    .drop-zone.drag-over {
+      border-color: var(--accent-dim);
+      background: rgba(0,229,255,0.04);
+    }
+
+    .drop-zone input[type="file"] {
+      position: absolute;
+      inset: 0;
+      opacity: 0;
+      cursor: pointer;
+      width: 100%;
+      height: 100%;
+    }
+
+    .drop-icon {
+      font-size: 36px;
+      margin-bottom: 12px;
+      display: block;
+      filter: grayscale(0.5);
+    }
+
+    .drop-title {
+      font-family: var(--font-display);
+      font-size: 18px;
+      font-weight: 700;
+      letter-spacing: 1px;
+      color: var(--text);
+      margin-bottom: 6px;
+    }
+
+    .drop-hint {
+      font-family: var(--font-mono);
+      font-size: 11px;
+      color: var(--text-muted);
+      letter-spacing: 1px;
+    }
+
+    .file-selected {
+      margin-top: 14px;
+      padding: 10px 14px;
+      background: rgba(0,229,255,0.06);
+      border: 1px solid var(--accent-dim);
+      border-radius: var(--radius);
+      font-family: var(--font-mono);
+      font-size: 12px;
+      color: var(--accent);
+      display: none;
+    }
+
+    /* ── Waveform visualiser ────────────────────────────────────── */
+    .waveform-container {
+      height: 60px;
+      margin-top: 14px;
+      display: none;
+      align-items: center;
+      gap: 2px;
+    }
+
+    .wave-bar {
+      flex: 1;
+      background: var(--accent-dim);
+      border-radius: 2px;
+      transition: height 0.1s ease;
+      min-height: 3px;
+    }
+
+    /* ── Predict button ─────────────────────────────────────────── */
+    .btn-predict {
+      margin-top: 16px;
+      width: 100%;
+      padding: 14px;
+      background: transparent;
+      border: 1px solid var(--accent-dim);
+      border-radius: var(--radius);
+      color: var(--accent);
+      font-family: var(--font-display);
+      font-size: 16px;
+      font-weight: 700;
+      letter-spacing: 4px;
+      text-transform: uppercase;
+      cursor: pointer;
+      transition: var(--transition);
+      position: relative;
+      overflow: hidden;
+    }
+
+    .btn-predict::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: var(--accent);
+      transform: scaleX(0);
+      transform-origin: left;
+      transition: transform 0.3s ease;
+      z-index: 0;
+    }
+
+    .btn-predict:hover:not(:disabled)::before { transform: scaleX(1); }
+    .btn-predict:hover:not(:disabled) { color: var(--bg); box-shadow: var(--glow-accent); }
+    .btn-predict span { position: relative; z-index: 1; }
+    .btn-predict:disabled { opacity: 0.35; cursor: not-allowed; }
+
+    /* ── Loading animation ──────────────────────────────────────── */
+    .loading-ring {
+      display: none;
+      width: 20px; height: 20px;
+      border: 2px solid rgba(0,229,255,0.2);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+      margin: 0 auto;
+    }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── Result panel ───────────────────────────────────────────── */
+    .result-panel { grid-column: 1 / -1; display: none; }
+
+    .verdict-display {
+      display: flex;
+      align-items: center;
+      gap: 24px;
+      padding: 24px;
+      border-radius: var(--radius);
+      border: 1px solid var(--border);
+      background: var(--surface);
+      margin-bottom: 16px;
+    }
+
+    .verdict-icon {
+      font-size: 48px;
+      flex-shrink: 0;
+      filter: drop-shadow(0 0 12px currentColor);
+    }
+
+    .verdict-label {
+      font-family: var(--font-display);
+      font-size: 40px;
+      font-weight: 900;
+      letter-spacing: 4px;
+      text-transform: uppercase;
+      line-height: 1;
+    }
+
+    .verdict-label.normal { color: var(--normal); text-shadow: var(--glow-normal); }
+    .verdict-label.faulty { color: var(--faulty); text-shadow: var(--glow-faulty); }
+
+    .verdict-sub {
+      font-family: var(--font-mono);
+      font-size: 11px;
+      color: var(--text-muted);
+      letter-spacing: 2px;
+      text-transform: uppercase;
+      margin-top: 4px;
+    }
+
+    .confidence-block { margin-top: 10px; }
+
+    .confidence-label {
+      font-family: var(--font-mono);
+      font-size: 11px;
+      color: var(--text-muted);
+      letter-spacing: 1.5px;
+      margin-bottom: 6px;
+      display: flex;
+      justify-content: space-between;
+    }
+
+    .confidence-bar-bg {
+      height: 8px;
+      background: var(--border);
+      border-radius: 4px;
+      overflow: hidden;
+    }
+
+    .confidence-bar-fill {
+      height: 100%;
+      border-radius: 4px;
+      transition: width 1s cubic-bezier(0.22, 1, 0.36, 1);
+      width: 0%;
+    }
+
+    .confidence-bar-fill.normal { background: linear-gradient(90deg, var(--normal-dim), var(--normal)); box-shadow: 0 0 8px var(--normal); }
+    .confidence-bar-fill.faulty { background: linear-gradient(90deg, var(--faulty-dim), var(--faulty)); box-shadow: 0 0 8px var(--faulty); }
+
+    /* ── Metrics strip ──────────────────────────────────────────── */
+    .metrics-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 12px;
+    }
+
+    .metric-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 14px;
+      text-align: center;
+    }
+
+    .metric-val {
+      font-family: var(--font-mono);
+      font-size: 20px;
+      color: var(--accent);
+      font-weight: bold;
+    }
+
+    .metric-lbl {
+      font-family: var(--font-mono);
+      font-size: 9px;
+      color: var(--text-muted);
+      letter-spacing: 1.5px;
+      text-transform: uppercase;
+      margin-top: 4px;
+    }
+
+    /* ── History panel ──────────────────────────────────────────── */
+    .history-panel { grid-column: 1 / -1; }
+
+    .history-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-family: var(--font-mono);
+      font-size: 11px;
+    }
+
+    .history-table th {
+      text-align: left;
+      padding: 6px 10px;
+      color: var(--text-muted);
+      letter-spacing: 1.5px;
+      border-bottom: 1px solid var(--border);
+      font-weight: normal;
+    }
+
+    .history-table td {
+      padding: 8px 10px;
+      border-bottom: 1px solid rgba(30,45,61,0.5);
+    }
+
+    .history-table tr:hover td { background: rgba(0,229,255,0.02); }
+
+    .badge {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 2px;
+      font-size: 10px;
+      letter-spacing: 1.5px;
+      font-weight: bold;
+      text-transform: uppercase;
+    }
+
+    .badge.normal { color: var(--normal); border: 1px solid var(--normal-dim); background: rgba(0,255,136,0.06); }
+    .badge.faulty { color: var(--faulty); border: 1px solid var(--faulty-dim); background: rgba(255,62,62,0.06); }
+
+    .no-history {
+      text-align: center;
+      padding: 20px;
+      color: var(--text-muted);
+      font-family: var(--font-mono);
+      font-size: 11px;
+      letter-spacing: 1px;
+    }
+
+    /* ── Footer ─────────────────────────────────────────────────── */
+    footer {
+      border-top: 1px solid var(--border);
+      padding: 14px 0;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-family: var(--font-mono);
+      font-size: 10px;
+      color: var(--text-muted);
+      letter-spacing: 1px;
+    }
+
+    /* ── Error toast ────────────────────────────────────────────── */
+    .toast {
+      position: fixed;
+      bottom: 24px;
+      right: 24px;
+      background: var(--faulty-dim);
+      border: 1px solid var(--faulty);
+      color: var(--faulty);
+      padding: 12px 18px;
+      border-radius: var(--radius);
+      font-family: var(--font-mono);
+      font-size: 12px;
+      z-index: 9999;
+      transform: translateY(80px);
+      opacity: 0;
+      transition: all 0.3s ease;
+      max-width: 360px;
+    }
+
+    .toast.show { transform: translateY(0); opacity: 1; }
+
+    /* ── Animations ─────────────────────────────────────────────── */
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(8px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+
+    .result-panel.visible {
+      display: block;
+      animation: fadeIn 0.4s ease forwards;
+    }
+
+    @keyframes glitch {
+      0%, 100% { clip-path: inset(0 0 100% 0); }
+      20% { clip-path: inset(0 0 80% 0); transform: translate(-2px); }
+      40% { clip-path: inset(30% 0 50% 0); transform: translate(2px); }
+      60% { clip-path: inset(60% 0 20% 0); transform: translate(-1px); }
+      80% { clip-path: inset(80% 0 0% 0); transform: translate(1px); }
+    }
+  </style>
+</head>
+<body>
+
+<div class="shell">
+  <!-- ── Header ──────────────────────────────────────── -->
+  <header>
+    <div class="logo">
+      <span class="logo-mark">PredictiveSense</span>
+      <span class="logo-sub">v1.0 / Machine Health Monitor</span>
+    </div>
+    <div class="status-bar">
+      <div class="status-indicator">
+        <div class="dot" id="api-dot"></div>
+        <span id="api-status">API CONNECTING…</span>
+      </div>
+      <span id="clock" style="opacity:0.5"></span>
+    </div>
+  </header>
+
+  <!-- ── Main ────────────────────────────────────────── -->
+  <main>
+
+    <!-- Upload Panel (full width) -->
+    <div class="panel upload-panel">
+      <div class="panel-title">▸ Audio Input / Signal Upload</div>
+
+      <div class="drop-zone" id="drop-zone">
+        <input type="file" id="audio-file" accept=".wav,.mp3,.flac,.ogg" />
+        <span class="drop-icon">🎙️</span>
+        <div class="drop-title">Drop Machine Audio Here</div>
+        <div class="drop-hint">WAV · MP3 · FLAC · OGG &nbsp;|&nbsp; max 10 MB</div>
+        <div class="file-selected" id="file-label"></div>
+      </div>
+
+      <!-- Synthetic waveform preview bars -->
+      <div class="waveform-container" id="waveform"></div>
+
+      <button class="btn-predict" id="btn-predict" disabled>
+        <span id="btn-text">ANALYSE SIGNAL</span>
+        <div class="loading-ring" id="loading-ring"></div>
+      </button>
+    </div>
+
+    <!-- Result Panel (full width, hidden until result) -->
+    <div class="panel result-panel" id="result-panel">
+      <div class="panel-title">▸ Diagnostic Result</div>
+
+      <div class="verdict-display" id="verdict-display">
+        <span class="verdict-icon" id="verdict-icon"></span>
+        <div>
+          <div class="verdict-label" id="verdict-label"></div>
+          <div class="verdict-sub" id="verdict-sub"></div>
+        </div>
+      </div>
+
+      <div class="confidence-block">
+        <div class="confidence-label">
+          <span>CONFIDENCE SCORE</span>
+          <span id="confidence-pct">—</span>
+        </div>
+        <div class="confidence-bar-bg">
+          <div class="confidence-bar-fill" id="conf-bar"></div>
+        </div>
+      </div>
+
+      <div class="metrics-grid" style="margin-top:16px">
+        <div class="metric-card">
+          <div class="metric-val" id="m-conf">—</div>
+          <div class="metric-lbl">Confidence</div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-val" id="m-prob">—</div>
+          <div class="metric-lbl">P(Faulty)</div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-val" id="m-time">—</div>
+          <div class="metric-lbl">Latency (ms)</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Analysis History -->
+    <div class="panel history-panel">
+      <div class="panel-title">▸ Session History</div>
+      <table class="history-table">
+        <thead>
+          <tr>
+            <th>FILE</th>
+            <th>VERDICT</th>
+            <th>CONFIDENCE</th>
+            <th>P(FAULTY)</th>
+            <th>TIME</th>
+          </tr>
+        </thead>
+        <tbody id="history-body">
+          <tr><td colspan="5" class="no-history">No analyses yet — upload an audio file to begin.</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+  </main>
+
+  <!-- ── Footer ──────────────────────────────────────── -->
+  <footer>
+    <span>PREDICTIVE MAINTENANCE SYSTEM · DEEP LEARNING AUDIO CLASSIFIER</span>
+    <span id="req-count">REQUESTS: 0</span>
+  </footer>
+</div>
+
+<!-- Error Toast -->
+<div class="toast" id="toast"></div>
+
+<script>
+  // ── Config ────────────────────────────────────────────────────
+  const API_BASE = 'http://localhost:8000';
+  let requestCount = 0;
+  const history = [];
+
+  // ── Clock ─────────────────────────────────────────────────────
+  function updateClock() {
+    document.getElementById('clock').textContent =
+      new Date().toLocaleTimeString('en-GB', { hour12: false });
+  }
+  setInterval(updateClock, 1000);
+  updateClock();
+
+  // ── API health check ──────────────────────────────────────────
+  async function checkApiHealth() {
+    const dot = document.getElementById('api-dot');
+    const lbl = document.getElementById('api-status');
+    try {
+      const res = await fetch(`${API_BASE}/health`, { signal: AbortSignal.timeout(3000) });
+      const data = await res.json();
+      dot.classList.remove('offline');
+      lbl.textContent = data.model_loaded ? 'API ONLINE · MODEL READY' : 'API ONLINE · NO MODEL';
+    } catch {
+      dot.classList.add('offline');
+      lbl.textContent = 'API OFFLINE';
+    }
+  }
+  checkApiHealth();
+  setInterval(checkApiHealth, 10000);
+
+  // ── Toast ─────────────────────────────────────────────────────
+  function showToast(msg) {
+    const t = document.getElementById('toast');
+    t.textContent = msg;
+    t.classList.add('show');
+    setTimeout(() => t.classList.remove('show'), 4000);
+  }
+
+  // ── Waveform visualiser ───────────────────────────────────────
+  function renderWaveform(isFaulty = false) {
+    const container = document.getElementById('waveform');
+    container.style.display = 'flex';
+    container.innerHTML = '';
+    const N = 80;
+    for (let i = 0; i < N; i++) {
+      const bar = document.createElement('div');
+      bar.className = 'wave-bar';
+      const baseH = isFaulty
+        ? Math.random() * 50 + 5   // spiky for faulty
+        : Math.abs(Math.sin(i / N * Math.PI * 6)) * 40 + 5; // smooth for normal
+      bar.style.height = `${baseH}px`;
+      bar.style.background = isFaulty ? 'var(--faulty-dim)' : 'var(--accent-dim)';
+      container.appendChild(bar);
+    }
+  }
+
+  // Animate the waveform bars while loading
+  function animateWaveform() {
+    const bars = document.querySelectorAll('.wave-bar');
+    bars.forEach(bar => {
+      const h = Math.random() * 50 + 5;
+      bar.style.height = `${h}px`;
+    });
+  }
+
+  // ── File selection ────────────────────────────────────────────
+  const fileInput = document.getElementById('audio-file');
+  const fileLabel = document.getElementById('file-label');
+  const dropZone  = document.getElementById('drop-zone');
+  const btnPredict = document.getElementById('btn-predict');
+
+  fileInput.addEventListener('change', () => {
+    const f = fileInput.files[0];
+    if (!f) return;
+    handleFileSelected(f);
+  });
+
+  function handleFileSelected(file) {
+    fileLabel.style.display = 'block';
+    fileLabel.textContent = `📂  ${file.name}  (${(file.size/1024).toFixed(1)} KB)`;
+    btnPredict.disabled = false;
+    renderWaveform(false);
+  }
+
+  // Drag-and-drop
+  dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('drag-over'); });
+  dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
+  dropZone.addEventListener('drop', e => {
+    e.preventDefault();
+    dropZone.classList.remove('drag-over');
+    const file = e.dataTransfer.files[0];
+    if (file) {
+      fileInput.files = e.dataTransfer.files;
+      handleFileSelected(file);
+    }
+  });
+
+  // ── Predict ───────────────────────────────────────────────────
+  btnPredict.addEventListener('click', runPrediction);
+
+  async function runPrediction() {
+    const file = fileInput.files[0];
+    if (!file) return;
+
+    // UI: loading state
+    const btnText = document.getElementById('btn-text');
+    const ring    = document.getElementById('loading-ring');
+    btnPredict.disabled = true;
+    btnText.style.display = 'none';
+    ring.style.display = 'block';
+
+    let waveInterval = setInterval(animateWaveform, 80);
+
+    const t0 = performance.now();
+    try {
+      const form = new FormData();
+      form.append('file', file);
+
+      const res = await fetch(`${API_BASE}/predict`, {
+        method: 'POST',
+        body: form,
+      });
+
+      const latency = Math.round(performance.now() - t0);
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.detail?.message || `HTTP ${res.status}`);
+      }
+
+      const data = await res.json();
+      displayResult(data, latency);
+      addHistory(data, latency);
+
+      requestCount++;
+      document.getElementById('req-count').textContent = `REQUESTS: ${requestCount}`;
+
+    } catch (err) {
+      showToast(`⚠ ${err.message}`);
+    } finally {
+      clearInterval(waveInterval);
+      btnText.style.display = 'inline';
+      ring.style.display = 'none';
+      btnPredict.disabled = false;
+    }
+  }
+
+  // ── Display result ────────────────────────────────────────────
+  function displayResult(data, latencyMs) {
+    const isFaulty = data.prediction === 'Faulty';
+    const confPct  = Math.round(data.confidence * 100);
+
+    // Verdict
+    document.getElementById('verdict-icon').textContent  = isFaulty ? '🔴' : '🟢';
+    const lbl = document.getElementById('verdict-label');
+    lbl.textContent = data.prediction;
+    lbl.className   = `verdict-label ${isFaulty ? 'faulty' : 'normal'}`;
+    document.getElementById('verdict-sub').textContent =
+      isFaulty
+        ? 'FAULT DETECTED — IMMEDIATE INSPECTION ADVISED'
+        : 'MACHINE OPERATING WITHIN NORMAL PARAMETERS';
+
+    // Confidence bar
+    document.getElementById('confidence-pct').textContent = `${confPct}%`;
+    const bar = document.getElementById('conf-bar');
+    bar.className = `confidence-bar-fill ${isFaulty ? 'faulty' : 'normal'}`;
+    setTimeout(() => bar.style.width = `${confPct}%`, 50);
+
+    // Metrics
+    document.getElementById('m-conf').textContent  = `${confPct}%`;
+    document.getElementById('m-prob').textContent  = data.raw_probability.toFixed(3);
+    document.getElementById('m-time').textContent  = latencyMs;
+
+    // Waveform colour update
+    renderWaveform(isFaulty);
+
+    // Show panel
+    const panel = document.getElementById('result-panel');
+    panel.classList.remove('visible');
+    void panel.offsetWidth; // force reflow for animation restart
+    panel.classList.add('visible');
+  }
+
+  // ── History table ─────────────────────────────────────────────
+  function addHistory(data, latencyMs) {
+    const isFaulty = data.prediction === 'Faulty';
+    const tbody = document.getElementById('history-body');
+
+    // Clear placeholder
+    const placeholder = tbody.querySelector('.no-history');
+    if (placeholder) placeholder.parentElement.remove();
+
+    const row = document.createElement('tr');
+    row.innerHTML = `
+      <td>${data.file}</td>
+      <td><span class="badge ${isFaulty ? 'faulty' : 'normal'}">${data.prediction}</span></td>
+      <td>${Math.round(data.confidence * 100)}%</td>
+      <td>${data.raw_probability.toFixed(4)}</td>
+      <td>${new Date().toLocaleTimeString('en-GB', { hour12: false })}</td>
+    `;
+    tbody.prepend(row);
+  }
+</script>
+</body>
+</html>
